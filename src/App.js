@@ -19,6 +19,8 @@ export default function App() {
   const [shopOwner, setShopOwner] = useState(null);
   const [toast, setToast]     = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // setup form
   const [setupName, setSetupName]     = useState('');
@@ -37,9 +39,14 @@ export default function App() {
   // my shop
   const [newItem, setNewItem] = useState({ name: '', desc: '', cost: 1 });
 
-  // ── 初始化：從 localStorage 讀取已存的 userId ──────────────
+  // ── 初始化：從 URL 參數或 localStorage 讀取 userId ──────────
   useEffect(() => {
-    const savedId = localStorage.getItem('starboard_user_id');
+    const params = new URLSearchParams(window.location.search);
+    const uidFromUrl = params.get('uid');
+    if (uidFromUrl) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    const savedId = uidFromUrl || localStorage.getItem('starboard_user_id');
     if (savedId) {
       loadUser(savedId);
     } else {
@@ -164,6 +171,23 @@ export default function App() {
     setLoading(false);
   }
 
+  // ── 刪除帳號 ──────────────────────────────────────────────
+  async function deleteAccount() {
+    setLoading(true);
+    await supabase.from('users').update({
+      name: '已刪除用戶',
+      coin_name: '—',
+      avatar: '👻',
+      color: '#555555',
+      is_deleted: true,
+    }).eq('id', me.id);
+    localStorage.removeItem('starboard_user_id');
+    setMe(null); setUsers([]); setWallet({}); setHistory([]); setShops({});
+    setShowSettings(false); setConfirmDelete(false);
+    setScreen('setup');
+    setLoading(false);
+  }
+
   // ── 上架商品 ───────────────────────────────────────────────
   async function addShopItem() {
     if (!newItem.name.trim()) return;
@@ -183,7 +207,7 @@ export default function App() {
     await loadAll();
   }
 
-  const friends = users.filter(u => u.id !== me?.id);
+  const friends = users.filter(u => u.id !== me?.id && !u.is_deleted);
   const myItems = shops[me?.id] || [];
 
   // ── 畫面：loading ─────────────────────────────────────────
@@ -258,11 +282,48 @@ export default function App() {
 
       <header style={s.header}>
         <span style={s.logo}>✦ starboard</span>
-        <div style={s.avatarChip}>
+        <div style={s.avatarChip} onClick={() => { setShowSettings(v => !v); setConfirmDelete(false); }}>
           <span style={{ fontSize:18 }}>{me.avatar}</span>
           <span style={{ fontSize:13, color:'#c8b8f0', fontWeight:600 }}>{me.name}</span>
+          <span style={{ fontSize:11, color:'#6655a0' }}>{showSettings ? '▲' : '▼'}</span>
         </div>
       </header>
+
+      {showSettings && (
+        <div style={s.settingsPanel}>
+          <div style={s.settingsTitle}>帳號設定</div>
+
+          <div style={s.settingsRow}>
+            <div>
+              <div style={{ fontSize:14, color:'#f0eaff', fontWeight:600 }}>換裝置登入</div>
+              <div style={{ fontSize:12, color:'#6655a0', marginTop:3 }}>複製連結，在新裝置開啟即可</div>
+            </div>
+            <button style={s.copyBtn} onClick={() => {
+              navigator.clipboard.writeText(`${window.location.origin}/?uid=${me.id}`);
+              showToast('連結已複製 📋');
+              setShowSettings(false);
+            }}>複製連結</button>
+          </div>
+
+          <div style={{ borderTop:'1px solid rgba(255,80,80,0.15)', marginTop:16, paddingTop:16 }}>
+            {!confirmDelete ? (
+              <button style={s.deleteBtn} onClick={() => setConfirmDelete(true)}>刪除帳號</button>
+            ) : (
+              <div>
+                <div style={{ fontSize:13, color:'#ff8080', marginBottom:12 }}>
+                  確定刪除？帳號資料將無法復原，但歷史紀錄會保留。
+                </div>
+                <div style={{ display:'flex', gap:10 }}>
+                  <button style={s.deleteConfirmBtn} onClick={deleteAccount} disabled={loading}>
+                    {loading ? '刪除中...' : '確認刪除'}
+                  </button>
+                  <button style={s.cancelBtn} onClick={() => setConfirmDelete(false)}>取消</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <main style={s.main}>
         {tab==='home'   && <HomeTab   me={me} friends={friends} wallet={wallet} history={history} users={users}
@@ -557,7 +618,7 @@ const s = {
   noise:{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,opacity:0.04,backgroundImage:"url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",backgroundSize:'150px'},
   header:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'18px 20px 14px',position:'sticky',top:0,zIndex:10,background:'rgba(14,10,26,0.9)',backdropFilter:'blur(12px)',borderBottom:'1px solid rgba(200,184,240,0.08)'},
   logo:{fontSize:18,fontWeight:700,letterSpacing:'0.08em',background:'linear-gradient(135deg,#e8d5ff,#ffd6fa)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'},
-  avatarChip:{display:'flex',alignItems:'center',gap:6,background:'rgba(200,184,240,0.1)',border:'1px solid rgba(200,184,240,0.2)',borderRadius:20,padding:'5px 12px'},
+  avatarChip:{display:'flex',alignItems:'center',gap:6,background:'rgba(200,184,240,0.1)',border:'1px solid rgba(200,184,240,0.2)',borderRadius:20,padding:'5px 12px',cursor:'pointer',userSelect:'none'},
   main:{padding:'16px 16px 20px',position:'relative',zIndex:1},
   loadingBar:{position:'fixed',top:0,left:0,right:0,height:2,background:'linear-gradient(90deg,#7b4fc4,#b06ad0)',zIndex:200,animation:'pulse 1s ease-in-out infinite'},
   walletCard:{background:'linear-gradient(135deg,#1e1535,#150f28)',border:'1px solid rgba(200,184,240,0.15)',borderRadius:20,padding:20,marginBottom:20,boxShadow:'0 8px 40px rgba(80,40,160,0.2)'},
@@ -604,4 +665,11 @@ const s = {
   toggleOnBtn:{padding:'6px 12px',background:'rgba(100,200,100,0.08)',border:'1px solid rgba(100,200,100,0.2)',borderRadius:7,color:'#80d080',fontSize:12,cursor:'pointer'},
   toast:{position:'fixed',top:80,left:'50%',transform:'translateX(-50%)',background:'linear-gradient(135deg,#3a2060,#5a3090)',border:'1px solid rgba(200,184,240,0.3)',color:'#f0eaff',padding:'10px 24px',borderRadius:20,fontSize:14,fontWeight:600,zIndex:500,boxShadow:'0 4px 20px rgba(80,40,160,0.4)',whiteSpace:'nowrap'},
   empty:{textAlign:'center',color:'#444',padding:'32px 0',fontSize:14},
+  settingsPanel:{position:'relative',zIndex:9,margin:'0 16px',background:'linear-gradient(135deg,#1e1535,#150f28)',border:'1px solid rgba(200,184,240,0.15)',borderRadius:16,padding:'18px 20px',marginBottom:4},
+  settingsTitle:{fontSize:11,fontWeight:700,letterSpacing:'0.12em',color:'#6655a0',textTransform:'uppercase',marginBottom:14},
+  settingsRow:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12},
+  copyBtn:{flexShrink:0,padding:'7px 14px',background:'rgba(200,184,240,0.1)',border:'1px solid rgba(200,184,240,0.25)',borderRadius:9,color:'#c8b8f0',fontSize:13,fontWeight:600,cursor:'pointer'},
+  deleteBtn:{width:'100%',padding:'9px 0',background:'rgba(255,80,80,0.08)',border:'1px solid rgba(255,100,100,0.2)',borderRadius:9,color:'#ff8080',fontSize:13,fontWeight:600,cursor:'pointer'},
+  deleteConfirmBtn:{flex:1,padding:'9px 0',background:'rgba(255,80,80,0.18)',border:'1px solid rgba(255,100,100,0.35)',borderRadius:9,color:'#ff8080',fontSize:13,fontWeight:600,cursor:'pointer'},
+  cancelBtn:{flex:1,padding:'9px 0',background:'rgba(200,184,240,0.08)',border:'1px solid rgba(200,184,240,0.2)',borderRadius:9,color:'#8870b0',fontSize:13,cursor:'pointer'},
 };
